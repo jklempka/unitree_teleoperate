@@ -9,8 +9,8 @@ sys.path.append(str(ROOT / "arm_sequence_executor" / "src"))
 
 import numpy as np
 
-from arm_sequence_executor.src.config import ControlConfig
-from arm_sequence_executor.src.trajectory import TrajectorySegment
+from teleop.replay.config import ControlConfig
+from teleop.replay.trajectory import TrajectorySegment
 
 from teleop.replay.episode_reader import EpisodeReader
 from teleop.replay.replayer import EpisodeReplayer
