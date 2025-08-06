@@ -3,7 +3,14 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.append(str(Path(__file__).resolve().parents[3]))
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.append(str(ROOT))
+sys.path.append(str(ROOT / "arm_sequence_executor" / "src"))
+
+import numpy as np
+
+from arm_sequence_executor.src.config import ControlConfig
+from arm_sequence_executor.src.trajectory import TrajectorySegment
 
 from teleop.replay.episode_reader import EpisodeReader
 from teleop.replay.replayer import EpisodeReplayer
@@ -11,16 +18,27 @@ from teleop.replay.replayer import EpisodeReplayer
 
 class FakeArmController:
     def __init__(self) -> None:
-        self.calls = []
+        self.calls: list[list[float]] = []
 
     def send_joint_positions(self, positions):
         self.calls.append(list(positions))
 
     def get_joint_positions(self):
-        return [9, 9, 9, 9]
+        return [0, 0, 0, 0]
 
 
-def test_replayer_calls_controller(tmp_path: Path) -> None:
+class FakePlanner:
+    def __init__(self) -> None:
+        self.calls: list[tuple[np.ndarray, np.ndarray]] = []
+
+    def plan(self, current, target, _scale, _hold):
+        self.calls.append((np.array(current), np.array(target)))
+        return TrajectorySegment(
+            start=np.array(current), goal=np.array(target), duration=0.1, hold=0.0
+        )
+
+
+def test_replayer_uses_planner_for_transitions(tmp_path: Path) -> None:
     data = {
         "info": {"image": {"fps": 100}},
         "data": [
@@ -33,9 +51,14 @@ def test_replayer_calls_controller(tmp_path: Path) -> None:
 
     reader = EpisodeReader(path)
     controller = FakeArmController()
-    replayer = EpisodeReplayer(reader, controller)
+    planner = FakePlanner()
+    cfg = ControlConfig(control_dt=0.1, max_velocity=100.0)
+    replayer = EpisodeReplayer(reader, controller, cfg=cfg, planner=planner)
 
     with patch("time.sleep", return_value=None):
         replayer.replay()
 
-    assert controller.calls == [[0, 1, 2, 3], [4, 5, 6, 7], [9, 9, 9, 9]]
+    assert controller.calls == [[0, 1, 2, 3], [4, 5, 6, 7], [0, 0, 0, 0]]
+    assert len(planner.calls) == 2
+    np.testing.assert_allclose(planner.calls[0][1], np.array([0, 1, 2, 3]))
+    np.testing.assert_allclose(planner.calls[1][1], np.array([0, 0, 0, 0]))
